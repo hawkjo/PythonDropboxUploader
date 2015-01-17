@@ -41,7 +41,7 @@ def command(login_required=True):
         return wrapper
     return decorate
 
-class PythonDropboxUploader:
+class DropboxUploader:
     """A convenient wrapper python interface to dropbox."""
 
     # Add the directory with your files here.
