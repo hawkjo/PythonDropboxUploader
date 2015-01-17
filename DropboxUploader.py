@@ -228,18 +228,14 @@ class DropboxUploader:
             raise
 
     @command()
-    def additive_sync(self, dname, add_to_dropbox=False, add_to_local=False):
-        """
-        Sync local directory recursively to Dropbox.
+    def additive_sync(self, add_to_dropbox=False, add_to_local=False):
+        """Sync local directory with Dropbox.
 
-        !!! Warning !!!
-        Extremely simple. You must be in local parent directory before starting
-        cli_client.py and desired dropbox parent directly before executing
-        command.
-        !!!!!!!!!!!!!!!
+        Additively (no deletion) syncs current local directory and current dropbox directory.
+        add_to_dropbox, add_to_local, or both must manually be set to True.
 
-        Examples:
-        Dropbox> put_recursive test_dir
+        Syntax:
+            DropboxUploader.additive_sync(add_to_dropbox=False, add_to_local=False)
         """
         if not add_to_dropbox and not add_to_local:
             sys.stdout.write('Additive sync not adding files anywhere.\n')
