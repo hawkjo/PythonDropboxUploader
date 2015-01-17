@@ -104,6 +104,11 @@ class DropboxUploader:
         else:
             self.current_path += "/" + path
 
+    @command()
+    def pwd(self):
+        """print current remote working directory"""
+        print self.current_path
+
     @command(login_required=False)
     def login(self):
         """log in to a Dropbox account"""
