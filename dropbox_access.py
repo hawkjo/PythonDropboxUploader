@@ -41,11 +41,15 @@ def command(login_required=True):
         return wrapper
     return decorate
 
-class DropboxAccess:
-    BASE_DIR = '/home/pi/local/include/mydropbox/'
-    TOKEN_FILE = os.path.join(BASE_DIR, 'token_store.txt')
+class PythonDropboxUploader:
+    """A convenient wrapper python interface to dropbox."""
+
+    # Add the directory with your files here.
+    BASE_DIR = '~/local/include/PythonDropboxUploader/'
     APP_KEY_FILE = os.path.join(BASE_DIR, 'app_key.txt')
     APP_SECRET_FILE = os.path.join(BASE_DIR, 'app_secret.txt')
+
+    TOKEN_FILE = os.path.join(BASE_DIR, 'token_store.txt')
 
     def __init__(self):
         self.current_path = ''
@@ -68,6 +72,16 @@ class DropboxAccess:
                 print "Malformed access token in %r." % (self.TOKEN_FILE,)
         except IOError:
             pass # don't worry if it's not there
+
+        try:
+            self.app_key = open(self.APP_KEY_FILE).read()
+            self.app_secret = open(self.APP_SECRET_FILE).read()
+        except:
+            print """Error reading app info. Please store your app key and secret in the files:
+            <base dir>/app_key.txt
+            <base dir>/app_secret.txt
+            """
+            raise
 
     @command()
     def ls(self):
