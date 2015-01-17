@@ -45,7 +45,7 @@ class DropboxUploader:
     """A convenient wrapper python interface to dropbox."""
 
     # Add the directory with your files here.
-    BASE_DIR = '~/local/include/PythonDropboxUploader/'
+    BASE_DIR = os.path.expanduser('~/local/include/PythonDropboxUploader/')
     APP_KEY_FILE = os.path.join(BASE_DIR, 'app_key.txt')
     APP_SECRET_FILE = os.path.join(BASE_DIR, 'app_secret.txt')
 
