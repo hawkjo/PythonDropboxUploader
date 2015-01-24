@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import locale
+import datetime
 import os
 import pprint
 import sys
@@ -17,14 +18,14 @@ from dropbox import client, rest, session
 def command(login_required=True):
     """a decorator for handling authentication and exceptions"""
     def decorate(f):
-        def wrapper(self, *args):
+        def wrapper(self, *args, **kwargs):
             if login_required and self.api_client is None:
                 sys.stdout.write("Please 'login' to execute this command\n")
                 return
 
             for i in xrange(5):
                 try:
-                    return f(self, *args)
+                    return f(self, *args, **kwargs)
                 except TypeError, e:
                     sys.stdout.write(str(e) + '\n')
                 except rest.ErrorResponse, e:
@@ -167,13 +168,18 @@ class DropboxUploader:
     @command()
     def mkdir(self, path):
         """create a new directory"""
+        sys.stdout.write('Making directory %s...' % path)
+        sys.stdout.flush()
         try:
             self.api_client.file_create_folder(self.current_path + "/" + path)
+            sys.stdout.write('Success!\n')
         except rest.ErrorResponse, e:
             if e.status == 403:
-                sys.stdout.write('%s already exists.\n' % path)
+                sys.stdout.write('Already exists.\n' % path)
                 return
-            raise
+            else:
+                sys.stdout.write('Failed\n\n\n')
+                raise
 
     @command()
     def rm(self, path):
@@ -243,28 +249,45 @@ class DropboxUploader:
             DropboxUploader.additive_sync(add_to_dropbox=False, add_to_local=False)
         """
         if not add_to_dropbox and not add_to_local:
-            sys.stdout.write('Additive sync not adding files anywhere.\n')
+            sys.stdout.write('No destination flag set.\n%s' % self.additive_sync.__doc__)
             return
 
-        if not os.path.isdir(dname):
-            sys.stdout.write(dname + ' is not a directory.\n')
-            return
+        if add_to_dropbox:
+            for root, dirs, files in os.walk('.'):
+                if root.startswith('.'):
+                    root = root[1:]
+                if root.startswith('/'):
+                    root = root[1:]
 
-        cwd = os.getcwd()
-        self.mkdir(dname)
-        for root, dirs, files in os.walk(dname):
-            for dname in dirs:
-                dpath = os.path.join(root, dname)
-                sys.stdout.write('Making directory %s...' % dpath)
-                try:
-                    self.mkdir(dpath)
-                    sys.stdout.write('Success!\n')
-                except:
-                    sys.stdout.write('Failed\n\n\n')
-                    raise
-            for fname in files:
-                fpath = os.path.join(root, fname)
-                self.put(fpath, fpath)
+                root_mdata = self.api_client.metadata(self.current_path + '/' + root)
+                remote_dirs_mdata_given_name = {mdata['path'].lower(): mdata
+                    for mdata in root_mdata['contents'] if mdata['is_dir']}
+                remote_files_mdata_given_name = {mdata['path'].lower(): mdata
+                    for mdata in root_mdata['contents'] if not mdata['is_dir']}
+
+                for dname in dirs:
+                    if dname.startswith('./'):
+                        dname = dname[2:]
+                    drelpath = os.path.join(root, dname)
+                    dpath = os.path.join(self.current_path, drelpath)
+                    if dpath.lower() in remote_dirs_mdata_given_name:
+                        print '%s already exists.' % drelpath
+                    else:
+                        self.mkdir(drelpath)
+
+                for fname in files:
+                    if fname.startswith('./'):
+                        fname = fname[2:]
+                    frelpath = os.path.join(root, fname)
+                    fpath = os.path.join(self.current_path, frelpath)
+                    if fpath.lower() in remote_files_mdata_given_name:
+                        mdata = remote_files_mdata_given_name[fpath.lower()]
+                        remote_mtime = datetime.strptime(mdata['modified'],
+                                                         '%a, %d %b %Y %H:%M:%S %z')
+                        if remote_mtime > os.path.getmtime(frelpath):
+                            print '%s in dropbox newer. Skipping.'
+                            continue
+                    self.put(frelpath, frelpath)
 
     @command()
     def put_chunk(self, from_path, to_path, length, offset=0, upload_id=None):
