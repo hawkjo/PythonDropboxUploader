@@ -318,8 +318,10 @@ class DropboxUploader:
                     continue
                 elif os.path.isfile(dname):
                     os.unlink(dname)
+                    os.mkdir(dname)
+                else:
+                    os.mkdir(dname)
 
-                os.mkdir(dname)
                 with cd(dname):
                     self.cd(dname)
                     self.sync_dropbox_folder_to_local()
