@@ -5,6 +5,7 @@ import os
 import pprint
 import sys
 import re
+import shutil
 import time
 from dateutil.parser import parse
 from dateutil.tz import tzlocal
@@ -211,11 +212,17 @@ class DropboxUploader:
         Examples:
         Dropbox> get file.txt ~/dropbox-file.txt
         """
-        to_file = open(os.path.expanduser(to_path), "wb")
-
-        f, metadata = self.api_client.get_file_and_metadata(self.current_path + "/" + from_path)
-        print 'Metadata:', metadata
-        to_file.write(f.read())
+        from_path = self.current_path + "/" + from_path
+        sys.stdout.write('Downloading %s...' % from_path)
+        sys.stdout.flush()
+        try:
+            to_file = open(os.path.expanduser(to_path), "wb")
+            f, metadata = self.api_client.get_file_and_metadata(from_path)
+            to_file.write(f.read())
+            print 'Success!'
+        except rest.ErrorResponse, e:
+            print 'Failed.\n\n'
+            raise
 
     @command(num_tries=5)
     def put(self, from_path, to_path, overwrite=False, parent_rev=None):
@@ -236,10 +243,10 @@ class DropboxUploader:
                     from_file,
                     overwrite=overwrite,
                     parent_rev=parent_rev)
-            sys.stdout.write('Success!\n')
+            print 'Success!'
             return response
         except rest.ErrorResponse, e:
-            sys.stdout.write('Failed\n\n\n')
+            print 'Failed.\n\n'
             raise
 
     @command()
@@ -281,6 +288,44 @@ class DropboxUploader:
                     self.put(frelpath, frelpath, parent_rev=metadata['rev'])
                 else:
                     self.put(frelpath, frelpath)
+
+    @command()
+    def sync_dropbox_folder_to_local(self):
+        """Sync Dropbox directory to local.
+
+        Additively (no deletion) syncs current dropbox directory to current local directory.
+
+        Syntax:
+            DropboxUploader.sync_local_folder_to_dropbox()
+        """
+        root_metadata = self.api_client.metadata(self.current_path)
+        for fd_metadata in root_metadata['contents']:
+            if fd_metadata['is_dir']:
+                dpath = fd_metadata['path']
+                dname = os.path.basename(dpath)
+                if os.path.isdir(dname):
+                    print '%s already exists' % (os.path.abspath(dname))
+                    continue
+                elif os.path.isfile(dname):
+                    os.unlink(dname)
+
+                os.mkdir(dname)
+                with cd(dname):
+                    self.cd(dname)
+                    self.sync_dropbox_folder_to_local()
+                    self.cd('..')
+
+            else:
+                fpath = fd_metadata['path']
+                fname = os.path.basename(fpath)
+                if os.path.isdir(fname):
+                    shutil.rmtree(fname)
+                elif os.path.isfile(fname):
+                    remote_mtime = self.POSIX_mtime_given_metadata(fd_metadata)
+                    if remote_mtime < os.path.getmtime(fname):
+                        print '%s newer on local drive. Skipping.' % (os.path.abspath(fname))
+                        continue
+                self.get(fname, fname)
 
     @command()
     def put_chunk(self, from_path, to_path, length, offset=0, upload_id=None):
@@ -341,3 +386,16 @@ class DropboxUploader:
         elif s == '.':
             s = ''
         return s
+
+
+class cd:
+    """Context manager for changing the current working directory"""
+    def __init__(self, newPath):
+        self.newPath = newPath
+
+    def __enter__(self):
+        self.savedPath = os.getcwd()
+        os.chdir(self.newPath)
+
+    def __exit__(self, etype, value, traceback):
+        os.chdir(self.savedPath)
