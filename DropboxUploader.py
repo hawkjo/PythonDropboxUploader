@@ -315,7 +315,6 @@ class DropboxUploader:
                 dname = os.path.basename(dpath)
                 if os.path.isdir(dname):
                     self.out.write('%s already exists\n' % (os.path.abspath(dname)))
-                    continue
                 elif os.path.isfile(dname):
                     os.unlink(dname)
                     os.mkdir(dname)
