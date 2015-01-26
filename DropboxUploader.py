@@ -24,23 +24,23 @@ def command(login_required=True, num_tries=1):
     def decorate(f):
         def wrapper(self, *args, **kwargs):
             if login_required and self.api_client is None:
-                sys.stdout.write("Please 'login' to execute this command\n")
+                self.out.write("Please 'login' to execute this command\n")
                 return
 
             for i in xrange(num_tries):
                 try:
                     return f(self, *args, **kwargs)
                 except TypeError, e:
-                    sys.stdout.write(str(e) + '\n')
+                    self.out.write('Error:' + str(e) + '\n')
                 except rest.ErrorResponse, e:
                     if e.status == 500:
-                        sys.stdout.write('\nError: Out of space.\n')
+                        self.out.write('\nError: Out of space.\n')
                         raise
                     elif i < num_tries-1:
                         pass
                     else:
                         msg = e.user_error_msg or str(e)
-                        sys.stdout.write('Error: %s\n' % msg)
+                        self.out.write('Error: %s\n' % msg)
 
         wrapper.__doc__ = f.__doc__
         return wrapper
@@ -58,7 +58,8 @@ class DropboxUploader:
 
     def __init__(self):
         self.current_path = ''
-        self.prompt = "Dropbox> "
+        self.out = sys.stdout
+        self.logging = False
 
         self.api_client = None
         try:
@@ -68,13 +69,13 @@ class DropboxUploader:
                 sess = session.DropboxSession(self.APP_KEY, self.APP_SECRET)
                 sess.set_token(access_key, access_secret)
                 self.api_client = client.DropboxClient(sess)
-                print "[loaded OAuth 1 access token]"
+                self.out.write("[loaded OAuth 1 access token]\n")
             elif serialized_token.startswith('oauth2:'):
                 access_token = serialized_token[len('oauth2:'):]
                 self.api_client = client.DropboxClient(access_token)
-                print "[loaded OAuth 2 access token]"
+                self.out.write("[loaded OAuth 2 access token]\n")
             else:
-                print "Malformed access token in %r." % (self.TOKEN_FILE,)
+                self.out.write("Malformed access token in %r.\n" % (self.TOKEN_FILE,))
         except IOError:
             pass # don't worry if it's not there
 
@@ -82,11 +83,15 @@ class DropboxUploader:
             self.app_key = open(self.APP_KEY_FILE).read()
             self.app_secret = open(self.APP_SECRET_FILE).read()
         except:
-            print """Error reading app info. Please store your app key and secret in the files:
+            self.out.write("""Error reading app info. Please store your app key and secret in the files:
             <base dir>/app_key.txt
             <base dir>/app_secret.txt
-            """
+
+            """)
             raise
+
+    def __del__(self):
+        self.end_log()
 
     @command()
     def ls(self):
@@ -109,22 +114,22 @@ class DropboxUploader:
     @command()
     def pwd(self):
         """print current remote working directory"""
-        print self.current_path
+        self.out.write(self.current_path + '\n')
 
     @command(login_required=False)
     def login(self):
         """log in to a Dropbox account"""
         flow = client.DropboxOAuth2FlowNoRedirect(self.APP_KEY, self.APP_SECRET)
         authorize_url = flow.start()
-        sys.stdout.write("1. Go to: " + authorize_url + "\n")
-        sys.stdout.write("2. Click \"Allow\" (you might have to log in first).\n")
-        sys.stdout.write("3. Copy the authorization code.\n")
+        self.out.write("1. Go to: " + authorize_url + "\n")
+        self.out.write("2. Click \"Allow\" (you might have to log in first).\n")
+        self.out.write("3. Copy the authorization code.\n")
         code = raw_input("Enter the authorization code here: ").strip()
 
         try:
             access_token, user_id = flow.finish(code)
         except rest.ErrorResponse, e:
-            sys.stdout.write('Error: %s\n' % str(e))
+            self.out.write('Error: %s\n' % str(e))
             return
 
         with open(self.TOKEN_FILE, 'w') as f:
@@ -137,15 +142,15 @@ class DropboxUploader:
         sess = session.DropboxSession(self.APP_KEY, self.APP_SECRET)
         request_token = sess.obtain_request_token()
         authorize_url = sess.build_authorize_url(request_token)
-        sys.stdout.write("1. Go to: " + authorize_url + "\n")
-        sys.stdout.write("2. Click \"Allow\" (you might have to log in first).\n")
-        sys.stdout.write("3. Press ENTER.\n")
+        self.out.write("1. Go to: " + authorize_url + "\n")
+        self.out.write("2. Click \"Allow\" (you might have to log in first).\n")
+        self.out.write("3. Press ENTER.\n")
         raw_input()
 
         try:
             access_token = sess.obtain_access_token()
         except rest.ErrorResponse, e:
-            sys.stdout.write('Error: %s\n' % str(e))
+            self.out.write('Error: %s\n' % str(e))
             return
 
         with open(self.TOKEN_FILE, 'w') as f:
@@ -163,23 +168,23 @@ class DropboxUploader:
     def cat(self, path):
         """display the contents of a file"""
         f, metadata = self.api_client.get_file_and_metadata(self.current_path + "/" + path)
-        sys.stdout.write(f.read())
-        sys.stdout.write("\n")
+        self.out.write(f.read())
+        self.out.write("\n")
 
     @command(num_tries=5)
     def mkdir(self, path):
         """create a new directory"""
-        sys.stdout.write('Making directory %s...' % path)
-        sys.stdout.flush()
+        self.out.write('Making directory %s...' % path)
+        self.out.flush()
         try:
             self.api_client.file_create_folder(self.current_path + "/" + path)
-            sys.stdout.write('Success!\n')
+            self.out.write('Success!\n')
         except rest.ErrorResponse, e:
             if e.status == 403:
-                sys.stdout.write('Already exists.\n' % path)
+                self.out.write('Already exists.\n' % path)
                 return
             else:
-                sys.stdout.write('Failed\n\n\n')
+                self.out.write('Failed\n\n\n')
                 raise
 
     @command()
@@ -196,13 +201,13 @@ class DropboxUploader:
     @command()
     def share(self, path):
         """Create a link to share the file at the given path."""
-        print self.api_client.share(path)['url']
+        self.out.write(self.api_client.share(path)['url'] + '\n')
 
     @command()
     def account_info(self):
         """display account information"""
         f = self.api_client.account_info()
-        pprint.PrettyPrinter(indent=3).pprint(f)
+        pprint.Prettyprinter(indent=3).pprint(f, self.out)
 
     @command()
     def get(self, from_path, to_path):
@@ -213,15 +218,15 @@ class DropboxUploader:
         Dropbox> get file.txt ~/dropbox-file.txt
         """
         from_path = self.current_path + "/" + from_path
-        sys.stdout.write('Downloading %s...' % from_path)
-        sys.stdout.flush()
+        self.out.write('Downloading %s...' % from_path)
+        self.out.flush()
         try:
             to_file = open(os.path.expanduser(to_path), "wb")
             f, metadata = self.api_client.get_file_and_metadata(from_path)
             to_file.write(f.read())
-            print 'Success!'
+            self.out.write('Success!\n')
         except rest.ErrorResponse, e:
-            print 'Failed.\n\n'
+            self.out.write('Failed.\n\n\n')
             raise
 
     @command(num_tries=5)
@@ -234,8 +239,8 @@ class DropboxUploader:
         """
         encoding = locale.getdefaultlocale()[1] or 'ascii'
         full_path = (self.current_path + "/" + to_path).decode(encoding)
-        sys.stdout.write('Uploading %s...' % from_path)
-        sys.stdout.flush()
+        self.out.write('Uploading %s...' % from_path)
+        self.out.flush()
         try:
             with open(os.path.expanduser(from_path), "rb") as from_file:
                 response = self.api_client.put_file(
@@ -243,10 +248,10 @@ class DropboxUploader:
                     from_file,
                     overwrite=overwrite,
                     parent_rev=parent_rev)
-            print 'Success!'
+            self.out.write('Success!\n')
             return response
         except rest.ErrorResponse, e:
-            print 'Failed.\n\n'
+            self.out.write('Failed.\n\n\n')
             raise
 
     @command()
@@ -272,7 +277,7 @@ class DropboxUploader:
                 drelpath = os.path.join(root, dname)
                 dpath = os.path.join(self.current_path, drelpath)
                 if dpath.lower() in remote_dirs_metadata_given_name:
-                    print '%s already exists.' % drelpath
+                    self.out.write('%s already exists.\n' % drelpath)
                 else:
                     self.mkdir(drelpath)
 
@@ -284,12 +289,12 @@ class DropboxUploader:
                     metadata = remote_files_metadata_given_name[fpath.lower()]
                     remote_mtime = self.POSIX_mtime_given_metadata(metadata)
                     if remote_mtime > os.path.getmtime(frelpath):
-                        print '%s in dropbox newer. Skipping.' % frelpath
+                        self.out.write('%s in dropbox newer. Skipping.\n' % frelpath)
                         continue
                     self.put(frelpath, frelpath, parent_rev=metadata['rev'])
                 else:
                     self.put(frelpath, frelpath)
-        print 'Time to sync %s: %.2f seconds' % (self.current_path, start_time - time.time())
+        self.out.write('Time to sync %s: %.2f seconds\n' % (self.current_path, start_time - time.time()))
 
     @command()
     def sync_dropbox_folder_to_local(self):
@@ -307,7 +312,7 @@ class DropboxUploader:
                 dpath = fd_metadata['path']
                 dname = os.path.basename(dpath)
                 if os.path.isdir(dname):
-                    print '%s already exists' % (os.path.abspath(dname))
+                    self.out.write('%s already exists\n' % (os.path.abspath(dname)))
                     continue
                 elif os.path.isfile(dname):
                     os.unlink(dname)
@@ -326,10 +331,10 @@ class DropboxUploader:
                 elif os.path.isfile(fname):
                     remote_mtime = self.POSIX_mtime_given_metadata(fd_metadata)
                     if remote_mtime < os.path.getmtime(fname):
-                        print '%s newer on local drive. Skipping.' % (os.path.abspath(fname))
+                        self.out.write('%s newer on local drive. Skipping.\n' % (os.path.abspath(fname)))
                         continue
                 self.get(fname, fname)
-        print 'Time to sync %s: %.2f seconds' % (self.current_path, start_time - time.time())
+        self.out.write('Time to sync %s: %.2f seconds\n' % (self.current_path, start_time - time.time()))
 
     @command()
     def put_chunk(self, from_path, to_path, length, offset=0, upload_id=None):
@@ -346,7 +351,8 @@ class DropboxUploader:
             to_upload.seek(offset)
             new_offset, upload_id = self.api_client.upload_chunk(StringIO(to_upload.read(length)),
                                                                  offset, upload_id)
-            print 'For upload id: %r, uploaded bytes [%d-%d]' % (upload_id, offset, new_offset)
+            self.out.write('For upload id: %r, uploaded bytes [%d-%d]\n'
+                % (upload_id, offset, new_offset))
 
     @command()
     def commit_chunks(self, to_path, upload_id):
@@ -356,14 +362,15 @@ class DropboxUploader:
         Dropbox> commit_chunks auto/dropbox-copy-test.txt <upload-id>
         """
         metadata = self.api_client.commit_chunked_upload(to_path, upload_id)
-        print 'Metadata:', metadata
+        self.out.write('Metadata:\n')
+        pprint.pprint(metadata, self.out)
 
     @command()
     def search(self, string):
         """Search Dropbox for filenames containing the given string."""
         results = self.api_client.search(self.current_path, string)
         for r in results:
-            sys.stdout.write("%s\n" % r['path'])
+            self.out.write("%s\n" % r['path'])
 
     @command(login_required=False)
     def help(self):
@@ -378,7 +385,7 @@ class DropboxUploader:
         for cmd_name in cmd_names:
             f = getattr(self, cmd_name)
             if f.__doc__:
-                sys.stdout.write('%s: %s\n' % (cmd_name, f.__doc__))
+                self.out.write('%s: %s\n' % (cmd_name, f.__doc__))
 
     def POSIX_mtime_given_metadata(self, metadata):
         # Converting to POSIX time is a bitch. Hence this wrapper function.
@@ -390,6 +397,17 @@ class DropboxUploader:
         elif s == '.':
             s = ''
         return s
+
+    def start_log(self, fpath):
+        self.out = Tee(os.path.expanduser(fpath), 'a')
+        self.logging = True
+        self.out.write(time.strftime('Starting log at %a, %d %b %Y %H:%M:%S UTC\n\n', time.gmtime()))
+
+    def end_log(self):
+        if self.logging:
+            self.out.write(time.strftime('\nEnding log at %a, %d %b %Y %H:%M:%S UTC\n\n', time.gmtime()))
+            self.out = sys.stdout
+            self.logging = False
 
 
 class cd:
@@ -403,3 +421,23 @@ class cd:
 
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
+
+
+class Tee:
+    """A convenience class for outputting to stdout and a log file."""
+    def __init__(self, name, mode):
+        self.file = open(name, mode)
+        self.stdout = sys.stdout
+
+    def __del__(self):
+        self.file.close()
+
+    def write(self, data):
+        self.file.write(data)
+        self.file.flush()
+        self.stdout.write(data)
+        self.stdout.flush()
+
+    def flush(self):
+        self.stdout.flush()
+        self.file.flush()
