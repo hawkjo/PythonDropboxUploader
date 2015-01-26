@@ -294,7 +294,8 @@ class DropboxUploader:
                     self.put(frelpath, frelpath, parent_rev=metadata['rev'])
                 else:
                     self.put(frelpath, frelpath)
-        self.out.write('Time to sync %s: %.2f seconds\n' % (self.current_path, start_time - time.time()))
+        self.out.write('Time to sync %s: %.2f seconds\n'
+            % (self.current_path, time.time() - start_time))
 
     @command()
     def sync_dropbox_folder_to_local(self):
@@ -334,7 +335,8 @@ class DropboxUploader:
                         self.out.write('%s newer on local drive. Skipping.\n' % (os.path.abspath(fname)))
                         continue
                 self.get(fname, fname)
-        self.out.write('Time to sync %s: %.2f seconds\n' % (self.current_path, start_time - time.time()))
+        self.out.write('Time to sync %s: %.2f seconds\n'
+            % (self.current_path, time.time() - start_time))
 
     @command()
     def put_chunk(self, from_path, to_path, length, offset=0, upload_id=None):
