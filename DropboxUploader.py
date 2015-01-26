@@ -217,7 +217,8 @@ class DropboxUploader:
         Examples:
         Dropbox> get file.txt ~/dropbox-file.txt
         """
-        from_path = self.current_path + "/" + from_path
+        encoding = locale.getdefaultlocale()[1] or 'ascii'
+        from_path = (self.current_path + "/" + from_path).encode(encoding)
         self.out.write('Downloading %s...' % from_path)
         self.out.flush()
         try:
