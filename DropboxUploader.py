@@ -308,10 +308,11 @@ class DropboxUploader:
             DropboxUploader.sync_local_folder_to_dropbox()
         """
         start_time = time.time()
+        encoding = locale.getdefaultlocale()[1] or 'ascii'
         root_metadata = self.api_client.metadata(self.current_path)
         for fd_metadata in root_metadata['contents']:
             if fd_metadata['is_dir']:
-                dpath = fd_metadata['path']
+                dpath = fd_metadata['path'].encode(encoding)
                 dname = os.path.basename(dpath)
                 if os.path.isdir(dname):
                     self.out.write('%s already exists\n' % (os.path.abspath(dname)))
@@ -327,7 +328,7 @@ class DropboxUploader:
                     self.cd('..')
 
             else:
-                fpath = fd_metadata['path']
+                fpath = fd_metadata['path'].encode(encoding)
                 fname = os.path.basename(fpath)
                 if os.path.isdir(fname):
                     shutil.rmtree(fname)
