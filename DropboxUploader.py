@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 import locale
-import datetime
 import os
 import pprint
 import sys
+import re
+import time
+from dateutil.parser import parse
+from dateutil.tz import tzlocal
 
 PY3 = sys.version_info[0] == 3
 
@@ -15,7 +18,7 @@ else:
 
 from dropbox import client, rest, session
 
-def command(login_required=True):
+def command(login_required=True, num_tries=1):
     """a decorator for handling authentication and exceptions"""
     def decorate(f):
         def wrapper(self, *args, **kwargs):
@@ -23,7 +26,7 @@ def command(login_required=True):
                 sys.stdout.write("Please 'login' to execute this command\n")
                 return
 
-            for i in xrange(5):
+            for i in xrange(num_tries):
                 try:
                     return f(self, *args, **kwargs)
                 except TypeError, e:
@@ -32,7 +35,7 @@ def command(login_required=True):
                     if e.status == 500:
                         sys.stdout.write('\nError: Out of space.\n')
                         raise
-                    elif i < 4:
+                    elif i < num_tries-1:
                         pass
                     else:
                         msg = e.user_error_msg or str(e)
@@ -88,12 +91,9 @@ class DropboxUploader:
     def ls(self):
         """list files in current remote directory"""
         resp = self.api_client.metadata(self.current_path)
-
         if 'contents' in resp:
-            for f in resp['contents']:
-                name = os.path.basename(f['path'])
-                encoding = locale.getdefaultlocale()[1] or 'ascii'
-                sys.stdout.write(('%s\n' % name).encode(encoding))
+            encoding = locale.getdefaultlocale()[1] or 'ascii'
+            return [os.path.basename(f['path']).encode(encoding) for f in resp['contents']]
 
     @command()
     def cd(self, path=None):
@@ -165,7 +165,7 @@ class DropboxUploader:
         sys.stdout.write(f.read())
         sys.stdout.write("\n")
 
-    @command()
+    @command(num_tries=5)
     def mkdir(self, path):
         """create a new directory"""
         sys.stdout.write('Making directory %s...' % path)
@@ -217,8 +217,8 @@ class DropboxUploader:
         print 'Metadata:', metadata
         to_file.write(f.read())
 
-    @command()
-    def put(self, from_path, to_path):
+    @command(num_tries=5)
+    def put(self, from_path, to_path, overwrite=False, parent_rev=None):
         """
         Copy local file to Dropbox
 
@@ -231,7 +231,11 @@ class DropboxUploader:
         sys.stdout.flush()
         try:
             with open(os.path.expanduser(from_path), "rb") as from_file:
-                response = self.api_client.put_file(full_path, from_file)
+                response = self.api_client.put_file(
+                    full_path,
+                    from_file,
+                    overwrite=overwrite,
+                    parent_rev=parent_rev)
             sys.stdout.write('Success!\n')
             return response
         except rest.ErrorResponse, e:
@@ -239,54 +243,43 @@ class DropboxUploader:
             raise
 
     @command()
-    def additive_sync(self, add_to_dropbox=False, add_to_local=False):
-        """Sync local directory with Dropbox.
+    def sync_local_folder_to_dropbox(self):
+        """Sync local directory to Dropbox.
 
-        Additively (no deletion) syncs current local directory and current dropbox directory.
-        add_to_dropbox, add_to_local, or both must manually be set to True.
+        Additively (no deletion) syncs current local directory to current dropbox directory.
 
         Syntax:
-            DropboxUploader.additive_sync(add_to_dropbox=False, add_to_local=False)
+            DropboxUploader.sync_local_folder_to_dropbox()
         """
-        if not add_to_dropbox and not add_to_local:
-            sys.stdout.write('No destination flag set.\n%s' % self.additive_sync.__doc__)
-            return
+        for root, dirs, files in os.walk('.'):
+            root = self.remove_dotslash(root)
+            root_metadata = self.api_client.metadata(self.current_path + '/' + root)
+            remote_dirs_metadata_given_name = {metadata['path'].lower(): metadata
+                for metadata in root_metadata['contents'] if metadata['is_dir']}
+            remote_files_metadata_given_name = {metadata['path'].lower(): metadata
+                for metadata in root_metadata['contents'] if not metadata['is_dir']}
 
-        if add_to_dropbox:
-            for root, dirs, files in os.walk('.'):
-                if root.startswith('.'):
-                    root = root[1:]
-                if root.startswith('/'):
-                    root = root[1:]
+            for dname in dirs:
+                dname = self.remove_dotslash(dname)
+                drelpath = os.path.join(root, dname)
+                dpath = os.path.join(self.current_path, drelpath)
+                if dpath.lower() in remote_dirs_metadata_given_name:
+                    print '%s already exists.' % drelpath
+                else:
+                    self.mkdir(drelpath)
 
-                root_mdata = self.api_client.metadata(self.current_path + '/' + root)
-                remote_dirs_mdata_given_name = {mdata['path'].lower(): mdata
-                    for mdata in root_mdata['contents'] if mdata['is_dir']}
-                remote_files_mdata_given_name = {mdata['path'].lower(): mdata
-                    for mdata in root_mdata['contents'] if not mdata['is_dir']}
-
-                for dname in dirs:
-                    if dname.startswith('./'):
-                        dname = dname[2:]
-                    drelpath = os.path.join(root, dname)
-                    dpath = os.path.join(self.current_path, drelpath)
-                    if dpath.lower() in remote_dirs_mdata_given_name:
-                        print '%s already exists.' % drelpath
-                    else:
-                        self.mkdir(drelpath)
-
-                for fname in files:
-                    if fname.startswith('./'):
-                        fname = fname[2:]
-                    frelpath = os.path.join(root, fname)
-                    fpath = os.path.join(self.current_path, frelpath)
-                    if fpath.lower() in remote_files_mdata_given_name:
-                        mdata = remote_files_mdata_given_name[fpath.lower()]
-                        remote_mtime = datetime.strptime(mdata['modified'],
-                                                         '%a, %d %b %Y %H:%M:%S %z')
-                        if remote_mtime > os.path.getmtime(frelpath):
-                            print '%s in dropbox newer. Skipping.'
-                            continue
+            for fname in files:
+                fname = self.remove_dotslash(fname)
+                frelpath = os.path.join(root, fname)
+                fpath = os.path.join(self.current_path, frelpath)
+                if fpath.lower() in remote_files_metadata_given_name:
+                    metadata = remote_files_metadata_given_name[fpath.lower()]
+                    remote_mtime = self.POSIX_mtime_given_metadata(metadata)
+                    if remote_mtime > os.path.getmtime(frelpath):
+                        print '%s in dropbox newer. Skipping.' % frelpath
+                        continue
+                    self.put(frelpath, frelpath, parent_rev=metadata['rev'])
+                else:
                     self.put(frelpath, frelpath)
 
     @command()
@@ -338,3 +331,13 @@ class DropboxUploader:
             if f.__doc__:
                 sys.stdout.write('%s: %s\n' % (cmd_name, f.__doc__))
 
+    def POSIX_mtime_given_metadata(self, metadata):
+        # Converting to POSIX time is a bitch. Hence this wrapper function.
+        return time.mktime(parse(metadata['modified']).astimezone(tzlocal()).timetuple())
+
+    def remove_dotslash(self, s):
+        if s.startswith('./'):
+            s = s[2:]
+        elif s == '.':
+            s = ''
+        return s
