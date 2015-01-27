@@ -332,7 +332,7 @@ class DropboxUploader:
                 else:
                     os.mkdir(dname)
 
-                with cd(dname), DropboxUploader_cd(dname):
+                with cd(dname), DropboxUploader_cd(self, dname):
                     self.sync_dropbox_folder_to_local()
 
             else:
