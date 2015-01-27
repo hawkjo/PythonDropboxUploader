@@ -290,8 +290,18 @@ class DropboxUploader:
                     metadata = remote_files_metadata_given_name[fpath.lower()]
                     remote_mtime = self.POSIX_mtime_given_metadata(metadata)
                     if remote_mtime > os.path.getmtime(frelpath):
-                        self.out.write('%s in dropbox newer. Skipping.\n' % frelpath)
-                        continue
+                        if fd_metadata['bytes'] == os.path.getsize(frelpath):
+                            self.out.write('%s newer on Dropbox. Skipping.\n'
+                                % (frelpath))
+                            continue
+                        elif fd_metadata['bytes'] > os.path.getsize(frelpath):
+                            self.out.write('%s newer and larger on Dropbox. Skipping.\n'
+                                % (frelpath))
+                            continue
+                        else:
+                            self.out.write(
+                                '%s newer on Dropbox, but incomplete. Reuploading.\n'
+                                % (frelpath))
                     self.put(frelpath, frelpath, parent_rev=metadata['rev'])
                 else:
                     self.put(frelpath, frelpath)
@@ -335,8 +345,18 @@ class DropboxUploader:
                 elif os.path.isfile(fname):
                     remote_mtime = self.POSIX_mtime_given_metadata(fd_metadata)
                     if remote_mtime < os.path.getmtime(fname):
-                        self.out.write('%s newer on local drive. Skipping.\n' % (os.path.abspath(fname)))
-                        continue
+                        if fd_metadata['bytes'] == os.path.getsize(fname):
+                            self.out.write('%s newer on local drive. Skipping.\n'
+                                % (os.path.abspath(fname)))
+                            continue
+                        elif fd_metadata['bytes'] < os.path.getsize(fname):
+                            self.out.write('%s newer and larger on local drive. Skipping.\n'
+                                % (os.path.abspath(fname)))
+                            continue
+                        else:
+                            self.out.write(
+                                '%s newer on local drive, but incomplete. Redownloading.\n'
+                                % (os.path.abspath(fname)))
                 self.get(fname, fname)
         self.out.write('Time to sync %s: %.2f seconds\n'
             % (self.current_path, time.time() - start_time))
