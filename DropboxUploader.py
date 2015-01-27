@@ -453,14 +453,14 @@ class DropboxUploader_cd:
         if newPath.startswith('/'):
             self.newPath = newPath
         else:
-            self.newPath = d.current_path + '/' + newPath
+            self.newPath = self.d.current_path + '/' + newPath
 
     def __enter__(self):
-        self.savedPath = d.current_path
-        d.current_path = self.newPath
+        self.savedPath = self.d.current_path
+        self.d.current_path = self.newPath
 
     def __exit__(self, etype, value, traceback):
-        d.current_path = self.savedPath
+        self.d.current_path = self.savedPath
 
 
 class Tee:
