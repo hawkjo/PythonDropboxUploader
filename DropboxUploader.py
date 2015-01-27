@@ -331,7 +331,6 @@ class DropboxUploader:
                     os.mkdir(dname)
                 else:
                     os.mkdir(dname)
-
                 with cd(dname), DropboxUploader_cd(self, dname):
                     self.sync_dropbox_folder_to_local()
 
@@ -473,6 +472,8 @@ class Tee:
         self.file.close()
 
     def write(self, data):
+        if isinstance(data, unicode):
+            data = data.encode('utf-8')
         self.file.write(data)
         self.file.flush()
         self.stdout.write(data)
