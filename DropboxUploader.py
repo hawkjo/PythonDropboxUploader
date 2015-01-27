@@ -267,7 +267,8 @@ class DropboxUploader:
         start_time = time.time()
         for root, dirs, files in os.walk('.'):
             root = self.remove_dotslash(root)
-            root_metadata = self.api_client.metadata(self.current_path + '/' + root)
+            root_metadata = self.api_client.metadata(
+                (self.current_path + '/' + root).encode(encoding))
             remote_dirs_metadata_given_name = {metadata['path'].lower(): metadata
                 for metadata in root_metadata['contents'] if metadata['is_dir']}
             remote_files_metadata_given_name = {metadata['path'].lower(): metadata
@@ -318,11 +319,10 @@ class DropboxUploader:
             DropboxUploader.sync_local_folder_to_dropbox()
         """
         start_time = time.time()
-        encoding = locale.getdefaultlocale()[1] or 'ascii'
         root_metadata = self.api_client.metadata(self.current_path)
         for fd_metadata in root_metadata['contents']:
             if fd_metadata['is_dir']:
-                dpath = fd_metadata['path'].encode(encoding)
+                dpath = fd_metadata['path']
                 dname = os.path.basename(dpath)
                 if os.path.isdir(dname):
                     self.out.write('%s already exists\n' % (os.path.abspath(dname)))
@@ -332,13 +332,11 @@ class DropboxUploader:
                 else:
                     os.mkdir(dname)
 
-                with cd(dname):
-                    self.cd(dname)
+                with cd(dname), DropboxUploader_cd(dname):
                     self.sync_dropbox_folder_to_local()
-                    self.cd('..')
 
             else:
-                fpath = fd_metadata['path'].encode(encoding)
+                fpath = fd_metadata['path']
                 fname = os.path.basename(fpath)
                 if os.path.isdir(fname):
                     shutil.rmtree(fname)
@@ -446,6 +444,23 @@ class cd:
 
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
+
+
+class DropboxUploader_cd:
+    """Context manager for changing the current working directory"""
+    def __init__(self, d, newPath):
+        self.d = d
+        if newPath.startswith('/'):
+            self.newPath = newPath
+        else:
+            self.newPath = d.current_path + '/' + newPath
+
+    def __enter__(self):
+        self.savedPath = d.current_path
+        d.current_path = self.newPath
+
+    def __exit__(self, etype, value, traceback):
+        d.current_path = self.savedPath
 
 
 class Tee:
