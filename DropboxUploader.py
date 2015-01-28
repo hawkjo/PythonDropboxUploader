@@ -221,10 +221,19 @@ class DropboxUploader:
         from_path = (self.current_path + "/" + from_path).encode(encoding)
         self.out.write('Downloading %s...' % from_path)
         self.out.flush()
+        chunk_size = 4194304
         try:
-            to_file = open(os.path.expanduser(to_path), "wb")
             f, metadata = self.api_client.get_file_and_metadata(from_path)
-            to_file.write(f.read())
+            with open(os.path.expanduser(to_path), "wb") as to_file:
+                if metadata['bytes'] < chunk_size:
+                    to_file.write(f.read())
+                else:
+                    while True:
+                        buf = f.read(chunk_size)
+                        if not buf:
+                            break
+                        to_file.write(buf)
+                        self.out.write('.')
             self.out.write('Success!\n')
         except rest.ErrorResponse, e:
             self.out.write('Failed.\n\n\n')
