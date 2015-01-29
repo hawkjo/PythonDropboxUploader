@@ -219,12 +219,13 @@ class DropboxUploader:
         """
         encoding = locale.getdefaultlocale()[1] or 'ascii'
         from_path = (self.current_path + "/" + from_path).encode(encoding)
+        to_path = os.path.expanduser(to_path)
         self.out.write('Downloading %s...' % from_path)
         self.out.flush()
         chunk_size = 4194304
         try:
             f, metadata = self.api_client.get_file_and_metadata(from_path)
-            with open(os.path.expanduser(to_path), "wb") as to_file:
+            with open(to_path, "wb") as to_file:
                 if metadata['bytes'] < chunk_size:
                     to_file.write(f.read())
                 else:
@@ -234,6 +235,8 @@ class DropboxUploader:
                             break
                         to_file.write(buf)
                         self.out.write('.')
+            if metadata['bytes'] != os.path.getsize(to_path):
+                raise BufferError('Byte counts on local drive do not match Dropbox.')
             self.out.write('Success!\n')
         except rest.ErrorResponse, e:
             self.out.write('Failed.\n\n\n')
