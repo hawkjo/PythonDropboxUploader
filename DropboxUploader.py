@@ -33,7 +33,7 @@ def command(login_required=True, num_tries=1):
                 except TypeError, e:
                     self.out.write('Error:' + str(e) + '\n')
                 except rest.ErrorResponse, e:
-                    if e.status == 500:
+                    if e.status == 507:
                         self.out.write('\nError: Out of space.\n')
                         raise
                     elif i < num_tries-1:
