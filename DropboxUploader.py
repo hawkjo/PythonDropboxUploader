@@ -33,14 +33,17 @@ def command(login_required=True, num_tries=1):
                 except TypeError, e:
                     self.out.write('Error:' + str(e) + '\n')
                 except rest.ErrorResponse, e:
-                    if e.status == 507:
+                    if i < num_tries-1:
+                        pass
+                    elif e.status == 507:
                         self.out.write('\nError: Out of space.\n')
                         raise
-                    elif i < num_tries-1:
-                        pass
                     else:
                         msg = e.user_error_msg or str(e)
                         self.out.write('Error: %s\n' % msg)
+                except BufferError, e:
+                    if i < num_tries-1:
+                        pass
 
         wrapper.__doc__ = f.__doc__
         return wrapper
